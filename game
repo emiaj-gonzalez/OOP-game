@@ -1,0 +1,401 @@
+
+# Echoes of the Labyrinth – Text-based OOP RPG
+# Stage 6 Software Engineering – Object-Oriented Paradigm
+
+import sys
+from typing import Dict, List, Optional
+
+
+# =========================
+# Core domain classes
+# =========================
+
+class Character:
+    def __init__(self, name: str, health: int, attack: int, description: str):
+        self.name = name
+        self.health = health
+        self.attack_power = attack
+        self.description = description
+        self.inventory: List["Item"] = []
+        self.room: Optional["Room"] = None
+
+    def is_alive(self) -> bool:
+        return self.health > 0
+
+    def take_damage(self, amount: int):
+        self.health = max(0, self.health - amount)
+
+    def move_to(self, room: "Room"):
+        self.room = room
+
+    def __str__(self):
+        return f"{self.name} (HP: {self.health})"
+
+
+class Player(Character):
+    def __init__(self, name: str):
+        super().__init__(name, health=30, attack=5, description="The explorer of the Labyrinth.")
+
+    def attack(self, target: "Enemy"):
+        if not target.is_alive():
+            print(f"{target.name} is already defeated.")
+            return
+        print(f"You attack {target.name} for {self.attack_power} damage.")
+        target.take_damage(self.attack_power)
+        if not target.is_alive():
+            print(f"{target.name} has been defeated!")
+        else:
+            print(f"{target.name} has {target.health} HP left.")
+
+    def pick_up(self, item_name: str):
+        if not self.room:
+            return
+        item = self.room.get_item(item_name)
+        if item:
+            self.inventory.append(item)
+            self.room.items.remove(item)
+            print(f"You picked up {item.name}.")
+        else:
+            print("There is no such item here.")
+
+    def use_item(self, item_name: str):
+        item = next((i for i in self.inventory if i.name.lower() == item_name.lower()), None)
+        if not item:
+            print("You don't have that item.")
+            return
+        item.use(self)
+        if item.consumable:
+            self.inventory.remove(item)
+
+    def show_inventory(self):
+        if not self.inventory:
+            print("Your inventory is empty.")
+            return
+        print("Inventory:")
+        for i in self.inventory:
+            print(f"- {i.name}: {i.description}")
+
+
+class Enemy(Character):
+    def __init__(self, name: str, health: int, attack: int, description: str):
+        super().__init__(name, health, attack, description)
+
+    def take_turn(self, player: Player):
+        if not self.is_alive():
+            return
+        print(f"{self.name} attacks you for {self.attack_power} damage!")
+        player.take_damage(self.attack_power)
+        print(f"You now have {player.health} HP.")
+
+
+class Warden(Enemy):
+    def __init__(self):
+        super().__init__("Warden", health=20, attack=6,
+                         description="A heavy guardian that patrols the corridors.")
+
+
+class Shade(Enemy):
+    def __init__(self):
+        super().__init__("Shade", health=10, attack=4,
+                         description="A swift shadow that strikes from the dark.")
+
+    def take_turn(self, player: Player):
+        # Slightly stronger attack to show polymorphism
+        damage = self.attack_power + 1
+        print(f"{self.name} darts forward and hits you for {damage} damage!")
+        player.take_damage(damage)
+        print(f"You now have {player.health} HP.")
+
+
+class NPC(Character):
+    def __init__(self, name: str, description: str):
+        super().__init__(name, health=1, attack=0, description=description)
+
+    def talk(self):
+        print(f"{self.name}: I have nothing more to say.")
+
+
+class Merchant(NPC):
+    def __init__(self):
+        super().__init__("Merchant", "A mysterious figure offering help—for a price you don't pay in gold.")
+
+    def talk(self):
+        print("Merchant: The Architect fears the Resonant Key. Find it in the Vault and bring it to the Sanctum.")
+
+
+class Architect(NPC):
+    def __init__(self):
+        super().__init__("Architect", "The AI presence that controls the Labyrinth.")
+
+    def talk(self):
+        print("Architect: You think you can escape my design? Prove it in the Sanctum.")
+
+
+# =========================
+# Items
+# =========================
+
+class Item:
+    def __init__(self, name: str, description: str, consumable: bool = False):
+        self.name = name
+        self.description = description
+        self.consumable = consumable
+
+    def use(self, player: Player):
+        print(f"You can't use {self.name} right now.")
+
+
+class HealingPotion(Item):
+    def __init__(self):
+        super().__init__("Healing Potion", "Restores 10 HP.", consumable=True)
+
+    def use(self, player: Player):
+        heal_amount = 10
+        player.health += heal_amount
+        print(f"You drink the potion and restore {heal_amount} HP. You now have {player.health} HP.")
+
+
+class ResonantKey(Item):
+    def __init__(self):
+        super().__init__("Resonant Key", "A humming key that seems to resonate with the Sanctum.", consumable=False)
+
+
+# =========================
+# Environment
+# =========================
+
+class Room:
+    def __init__(self, name: str, description: str):
+        self.name = name
+        self.description = description
+        self.exits: Dict[str, "Room"] = {}
+        self.items: List[Item] = []
+        self.enemies: List[Enemy] = []
+        self.npcs: List[NPC] = []
+
+    def connect(self, direction: str, other: "Room"):
+        self.exits[direction.lower()] = other
+
+    def describe(self):
+        print(f"\n== {self.name} ==")
+        print(self.description)
+        if self.items:
+            print("Items here:")
+            for i in self.items:
+                print(f"- {i.name}: {i.description}")
+        if self.enemies:
+            print("Enemies here:")
+            for e in self.enemies:
+                if e.is_alive():
+                    print(f"- {e.name} (HP: {e.health})")
+        if self.npcs:
+            print("Characters here:")
+            for n in self.npcs:
+                print(f"- {n.name}: {n.description}")
+        if self.exits:
+            print("Exits:", ", ".join(self.exits.keys()))
+
+    def get_enemy(self) -> Optional[Enemy]:
+        for e in self.enemies:
+            if e.is_alive():
+                return e
+        return None
+
+    def get_item(self, item_name: str) -> Optional[Item]:
+        for i in self.items:
+            if i.name.lower() == item_name.lower():
+                return i
+        return None
+
+
+class Sanctum(Room):
+    def __init__(self):
+        super().__init__("Sanctum", "A calm, glowing chamber. You feel safer here.")
+
+    def restore_player(self, player: Player):
+        print("The Sanctum's light restores you.")
+        player.health = 30
+        print(f"Your health is fully restored to {player.health} HP.")
+
+
+class Vault(Room):
+    def __init__(self):
+        super().__init__("Vault", "A sealed chamber containing something powerful.")
+
+
+# =========================
+# Game engine
+# =========================
+
+class Game:
+    def __init__(self):
+        self.player = Player("Player")
+        self.rooms: Dict[str, Room] = {}
+        self.sanctum: Sanctum
+        self.vault: Vault
+        self.running = True
+        self._create_world()
+
+    def _create_world(self):
+        # Rooms
+        entrance = Room("Entrance", "The stone door closes behind you. Only forward remains.")
+        corridor = Room("Corridor", "A narrow passage with flickering lights.")
+        sanctum = Sanctum()
+        vault = Vault()
+
+        # Store references
+        self.rooms = {
+            "entrance": entrance,
+            "corridor": corridor,
+            "sanctum": sanctum,
+            "vault": vault,
+        }
+        self.sanctum = sanctum
+        self.vault = vault
+
+        # Connections
+        entrance.connect("north", corridor)
+        corridor.connect("south", entrance)
+        corridor.connect("east", vault)
+        corridor.connect("west", sanctum)
+        sanctum.connect("east", corridor)
+        vault.connect("west", corridor)
+
+        # Items
+        corridor.items.append(HealingPotion())
+        vault.items.append(ResonantKey())
+
+        # Enemies
+        corridor.enemies.append(Warden())
+        vault.enemies.append(Shade())
+
+        # NPCs
+        sanctum.npcs.append(Merchant())
+        corridor.npcs.append(Architect())
+
+        # Place player
+        self.player.move_to(entrance)
+
+    def start(self):
+        print("Welcome to Echoes of the Labyrinth.")
+        print("Type 'help' for a list of commands.")
+        while self.running and self.player.is_alive():
+            if not self.player.room:
+                break
+            self.player.room.describe()
+            command = input("\n> ").strip().lower()
+            self.handle_command(command)
+
+        if not self.player.is_alive():
+            print("You have fallen in the Labyrinth. Game over.")
+
+    def handle_command(self, command: str):
+        if command in ("quit", "exit"):
+            print("Goodbye.")
+            self.running = False
+            return
+
+        if command == "help":
+            self.print_help()
+            return
+
+        if command.startswith("go "):
+            direction = command[3:].strip()
+            self.move_player(direction)
+            return
+
+        if command.startswith("take "):
+            item_name = command[5:].strip()
+            self.player.pick_up(item_name)
+            return
+
+        if command.startswith("use "):
+            item_name = command[4:].strip()
+            self.player.use_item(item_name)
+            self.check_win_condition()
+            return
+
+        if command == "look":
+            if self.player.room:
+                self.player.room.describe()
+            return
+
+        if command == "inventory":
+            self.player.show_inventory()
+            return
+
+        if command == "attack":
+            self.player_attack()
+            return
+
+        if command == "talk":
+            self.talk_to_npc()
+            return
+
+        print("Unknown command. Type 'help' for options.")
+
+    def print_help(self):
+        print("Commands:")
+        print("- go <direction> (north, south, east, west)")
+        print("- look")
+        print("- take <item>")
+        print("- use <item>")
+        print("- attack")
+        print("- talk")
+        print("- inventory")
+        print("- quit")
+
+    def move_player(self, direction: str):
+        if not self.player.room:
+            return
+        room = self.player.room
+        if direction not in room.exits:
+            print("You can't go that way.")
+            return
+        new_room = room.exits[direction]
+        self.player.move_to(new_room)
+        print(f"You move {direction} to the {new_room.name}.")
+        # Sanctum passive effect
+        if isinstance(new_room, Sanctum):
+            new_room.restore_player(self.player)
+
+    def player_attack(self):
+        if not self.player.room:
+            return
+        enemy = self.player.room.get_enemy()
+        if not enemy:
+            print("There is nothing to attack here.")
+            return
+        self.player.attack(enemy)
+        if enemy.is_alive():
+            enemy.take_turn(self.player)
+
+    def talk_to_npc(self):
+        if not self.player.room or not self.player.room.npcs:
+            print("There is no one to talk to.")
+            return
+        # Just talk to the first NPC in the room
+        npc = self.player.room.npcs[0]
+        npc.talk()
+
+    def check_win_condition(self):
+        # Win if player is in Sanctum and has Resonant Key
+        if not self.player.room:
+            return
+        if not isinstance(self.player.room, Sanctum):
+            return
+        has_key = any(isinstance(i, ResonantKey) for i in self.player.inventory)
+        if has_key:
+            print("\nThe Resonant Key vibrates in your hand as the Sanctum responds.")
+            print("A doorway of light opens. You have escaped the Labyrinth.")
+            print("YOU WIN!")
+            self.running = False
+
+
+if __name__ == "__main__":
+    try:
+        Game().start()
+    except KeyboardInterrupt:
+        print("\nExiting game.")
+        sys.exit(0)
+
